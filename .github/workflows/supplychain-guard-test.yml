@@ -1,0 +1,31 @@
+name: supplychain-guard (public action, cross-account)
+
+on:
+  pull_request:
+    paths:
+      - "**/package.json"
+      - "**/*lock*"
+  workflow_dispatch: {}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        case: [npm, yarn, pnpm]
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - uses: Pirikara/supplychain-guard@main
+        with:
+          node-version: 'lts/*'
+          workdir: ${{ matrix.case }}
+          ignore-scripts: "true"
+          minimum-age-days: "7"
+          enable-ossf: "true"
+          enable-guarddog: "true"
+          guarddog-rules: "typosquat,suspicious_install_scripts,network_download,obfuscation"
+          guarddog-fail: "false"
+          # 本番はdigest pinを推奨：
+          # guarddog-image: "ghcr.io/datadog/guarddog@sha256:xxxxxxxx..."
