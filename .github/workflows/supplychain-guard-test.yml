@@ -79,7 +79,7 @@ jobs:
           minimum-age-days: "7"
           enable-ossf: "true"
           enable-guarddog: "true"
-          guarddog-rules: "typosquat,suspicious_install_scripts,network_download,obfuscation"
+          guarddog-rules: ""
           guarddog-fail: "false"
 
       - if: always()
