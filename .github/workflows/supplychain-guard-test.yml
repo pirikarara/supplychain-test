@@ -1,31 +1,91 @@
-name: supplychain-guard (public action, cross-account)
+name: supplychain-guard
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - "**/package.json"
       - "**/*lock*"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.collect.outputs.matrix }}
+      count:  ${{ steps.collect.outputs.count }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          fetch-depth: 0
+
+      - id: collect
+        name: Collect changed manifest directories
+        shell: bash
+        run: |
+          set -euo pipefail
+      
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.sha }}"
+          if [ -z "$base" ]; then
+            base=$(git merge-base HEAD origin/HEAD || echo "HEAD~1")
+          fi
+      
+          PATTERN='(^|/)(package.json|package-lock.json|npm-shrinkwrap.json|yarn.lock|pnpm-lock.yaml|bun.lockb)$'
+
+          mapfile -t DIRS < <(git diff --name-only "$base" "$head" \
+            | { grep -E "$PATTERN" || true; } \
+            | xargs -r -I{} dirname "{}" \
+            | sort -u)
+      
+          if [ "${#DIRS[@]}" -eq 0 ]; then
+            echo "Changed manifest dirs: (none)"
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0"   >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          json=$(printf '%s\n' "${DIRS[@]}" \
+            | jq -R -s 'split("\n") | map(select(length>0)) | map({workdir: .})' \
+            | jq -c .)
+
+          echo "Changed manifest dirs:"
+          echo "$json" | jq -r '.[].workdir'
+      
+          echo "matrix=$json" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$json" | jq 'length')" >> "$GITHUB_OUTPUT"
+
   guard:
+    needs: detect
+    if: ${{ needs.detect.outputs.count != '0' }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        case: [npm, yarn, pnpm]
+        include: ${{ fromJSON(needs.detect.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
-      - uses: Pirikara/supplychain-guard@main
+      - name: Run Supply Chain Guard
+        uses: Pirikara/supplychain-guard@main
         with:
-          node-version: 'lts/*'
-          workdir: ${{ matrix.case }}
-          ignore-scripts: "true"
-          minimum-age-days: "7"
+          workdir: ${{ matrix.workdir }}
           enable-ossf: "true"
           enable-guarddog: "true"
-          guarddog-rules: "typosquat,suspicious_install_scripts,network_download,obfuscation"
           guarddog-fail: "false"
-          # 本番はdigest pinを推奨：
-          # guarddog-image: "ghcr.io/datadog/guarddog@sha256:xxxxxxxx..."
+          warn-only: "false"
+          pr-comment: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarddog-report-${{ matrix.workdir }}
+          path: ${{ matrix.workdir }}/guarddog.json
+          retention-days: 7
