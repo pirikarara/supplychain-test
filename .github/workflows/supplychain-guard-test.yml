@@ -74,13 +74,11 @@ jobs:
         uses: Pirikara/supplychain-guard@main
         with:
           workdir: ${{ matrix.workdir }}
-          node-version: 'lts/*'
-          ignore-scripts: "true"
-          minimum-age-days: "7"
           enable-ossf: "true"
           enable-guarddog: "true"
-          guarddog-rules: ""
           guarddog-fail: "false"
+          warn-only: "false"
+          pr-comment: "true"
 
       - if: always()
         uses: actions/upload-artifact@v4
