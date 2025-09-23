@@ -80,6 +80,8 @@ jobs:
           guarddog-fail: "false"
           warn-only: "false"
           pr-comment: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - if: always()
         uses: actions/upload-artifact@v4
